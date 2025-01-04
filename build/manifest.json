@@ -1,0 +1,9 @@
+{
+	"id": "obsidian-title-slugify-plugin",
+	"name": "Obsidian Title Slugify Plugin",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "Formats titles to be slugified using dashes.",
+	"author": "Alex Artushihn",
+	"isDesktopOnly": false
+}
