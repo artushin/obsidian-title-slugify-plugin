@@ -73,10 +73,14 @@ export default class TitleSlugifyPlugin extends Plugin {
 			const frontmatter = cache?.frontmatter;
 
 			let targetMode = 'source'; // Default to edit mode
+			let isOwnedByOther = false;
+			let owner = '';
 
 			// If there's an owner field and it doesn't match current user, use reading mode
 			if (frontmatter && frontmatter.owner && frontmatter.owner !== this.currentUser) {
 				targetMode = 'preview';
+				isOwnedByOther = true;
+				owner = frontmatter.owner;
 			}
 
 			const currentView = leaf.view;
@@ -91,6 +95,11 @@ export default class TitleSlugifyPlugin extends Plugin {
 						mode: targetMode
 					}
 				});
+
+				// Show notice when switching to reading mode for other user's document
+				if (isOwnedByOther) {
+					new Notice(`Document owned by '${owner}' - opened in Reading View`);
+				}
 			}
 		} catch (error) {
 			console.error('Error setting view mode:', error);
