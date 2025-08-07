@@ -1,4 +1,5 @@
-import { App, TFile, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, TFile, Notice, Plugin, PluginSettingTab, Setting, WorkspaceLeaf } from 'obsidian';
+import * as os from 'os';
 
 const isValidSlugRegex = /^[a-z0-9._]+(?:-[a-z0-9._]+)*$/
 function slugify(text: string): string {
@@ -22,6 +23,8 @@ const DEFAULT_SETTINGS: TitleSlugifyPluginSettings = {
 
 export default class TitleSlugifyPlugin extends Plugin {
 	settings: TitleSlugifyPluginSettings;
+	private currentUser: string;
+	private observer: MutationObserver | null = null;
 
 	handleRename = (file: TFile, oldPath: string) => {
 		try {
@@ -41,10 +44,56 @@ export default class TitleSlugifyPlugin extends Plugin {
 				this.app.fileManager.renameFile(file, newPath);
 				new Notice("File name slugified");
 			}
-			
+
 			this.colorizeFileNames();
 		} catch (error) {
 			new Notice(`Error: ${error.message}`);
+		}
+	}
+
+	// Handle active leaf change to check owner and set view mode
+	private handleActiveLeafChange = (leaf: WorkspaceLeaf | null) => {
+		if (!leaf) return;
+
+		const view = leaf.view;
+		if (view.getViewType() !== 'markdown') return;
+
+		const file = (view as any).file;
+		if (!file) return;
+
+		// Use a small timeout to avoid conflicts with Obsidian's navigation
+		setTimeout(() => {
+			this.checkAndSetViewMode(leaf, file);
+		}, 100);
+	}
+
+	private checkAndSetViewMode(leaf: WorkspaceLeaf, file: TFile) {
+		try {
+			const cache = this.app.metadataCache.getFileCache(file);
+			const frontmatter = cache?.frontmatter;
+
+			let targetMode = 'source'; // Default to edit mode
+
+			// If there's an owner field and it doesn't match current user, use reading mode
+			if (frontmatter && frontmatter.owner && frontmatter.owner !== this.currentUser) {
+				targetMode = 'preview';
+			}
+
+			const currentView = leaf.view;
+			const currentState = (currentView as any).getState?.();
+
+			// Only change if the mode is different to avoid unnecessary updates
+			if (currentState && currentState.mode !== targetMode) {
+				leaf.setViewState({
+					type: 'markdown',
+					state: {
+						file: file.path,
+						mode: targetMode
+					}
+				});
+			}
+		} catch (error) {
+			console.error('Error setting view mode:', error);
 		}
 	}
 
@@ -152,7 +201,6 @@ export default class TitleSlugifyPlugin extends Plugin {
 		return observer;
 	}
 
-
 	private handleLayoutChange = () => {
 		// Check if file explorer exists and set up observer if needed
 		const fileExplorer = document.querySelector('.nav-files-container');
@@ -168,16 +216,30 @@ export default class TitleSlugifyPlugin extends Plugin {
 		}
 	}
 
-	private observer: MutationObserver | null = null;
-
 	async onload() {
 		await this.loadSettings();
+
+		// Get the current system user (cross-platform compatible)
+		try {
+			this.currentUser = os.userInfo().username;
+			console.log(`TitleSlugifyPlugin: Current user is ${this.currentUser}`);
+		} catch (error) {
+			console.error('TitleSlugifyPlugin: Failed to get system username:', error);
+			this.currentUser = 'unknown';
+		}
+
 		this.addSettingTab(new TitleSlugifySettingTab(this.app, this));
+
+		// Register existing event handlers
 		this.registerEvent(this.app.vault.on("rename", this.handleRename));
 		this.registerEvent(this.app.vault.on("modify", (file: TFile) => {
 			this.handleRename(file, file.path);
 		}));
 		this.registerEvent(this.app.workspace.on("resize", this.handleLayoutChange));
+
+		// Register new event handler for owner-based view mode switching
+		this.registerEvent(this.app.workspace.on('active-leaf-change', this.handleActiveLeafChange));
+
 		this.app.workspace.onLayoutReady(this.handleLayoutChange);
 
 		// Add custom styles
@@ -226,5 +288,16 @@ class TitleSlugifySettingTab extends PluginSettingTab {
 					this.plugin.settings.finalizer = value;
 					await this.plugin.saveSettings();
 				}));
+
+		// Add information about the owner feature
+		containerEl.createEl('h3', { text: 'Owner-based View Mode' });
+		containerEl.createEl('p', {
+			text: 'This plugin automatically switches to Reading View when opening documents owned by other users. Add an "owner" field to your frontmatter to use this feature.'
+		});
+
+		containerEl.createEl('p').innerHTML = `
+			<strong>Current system user:</strong> ${(this.plugin as any).currentUser || 'unknown'}<br>
+			<strong>Usage:</strong> Add <code>owner: username</code> to your document's frontmatter.
+		`;
 	}
 }
