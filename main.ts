@@ -174,6 +174,9 @@ export default class TitleSlugifyPlugin extends Plugin {
 		await this.loadSettings();
 		this.addSettingTab(new TitleSlugifySettingTab(this.app, this));
 		this.registerEvent(this.app.vault.on("rename", this.handleRename));
+		this.registerEvent(this.app.vault.on("modify", (file: TFile) => {
+			this.handleRename(file, file.path);
+		}));
 		this.registerEvent(this.app.workspace.on("resize", this.handleLayoutChange));
 		this.app.workspace.onLayoutReady(this.handleLayoutChange);
 
